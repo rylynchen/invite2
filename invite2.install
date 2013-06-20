@@ -1,0 +1,160 @@
+<?php
+
+/**
+ * @file
+ * Sets up the base table for our entity and a table to store information about
+ * the entity types.
+ */
+
+
+/**
+ * Implements hook_schema().
+ */
+function invite2_schema() {
+  $schema = array();
+
+  $schema['invite2'] = array(
+    'description' => 'The base table for invite2 entities.',
+    'fields' => array(
+      'iid' => array(
+        'description' => 'Primary Key: Identifier for a invite2.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'type' => array(
+        'description' => 'The {invite2_type}.type of this invite2.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'code' => array(
+        'description' => 'Stores the issued registration code and acts as primary identifier for a invite.',
+        'type' => 'varchar',
+        'length' => 8,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'email' => array(
+        'description' => 'Stores the e-mail the invite has been addressed to.',
+        'type' => 'varchar',
+        'length' => 100,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'uid' => array(
+        'description' => 'Stores the user id of the inviter.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'invitee' => array(
+        'description' => 'Stores the user id of the invitee upon registration.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'created' => array(
+        'description' => 'Stores the creation time of the invite.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'expiry' => array(
+        'description' => 'Stores the expiry time of the invite.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'joined' => array(
+        'description' => 'Will be filled with the time the invite was accepted upon registration.',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'canceled' => array(
+        'description' => 'Stores whether the invite has been withdrawn.',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'resent' => array(
+        'description' => 'Stores how many times the invite has been resent.',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'data' => array(
+        'type' => 'blob',
+        'not null' => FALSE,
+        'size' => 'big',
+        'serialize' => TRUE,
+        'description' => 'A serialized array of additional data.',
+      ),
+    ),
+    'primary key' => array('iid'),
+    'unique keys' => array(
+      'code' => array('code'),
+      'invite' => array('uid', 'email'),
+    ),
+    'indexes' => array(
+      'type' => array('type'),
+      'email' => array('email'),
+      'uid'   => array('uid'),
+      'invitee' => array('invitee'),
+      'relation' => array('uid', 'invitee'),
+      'expiry' => array('expiry'),
+      'joined' => array('joined'),
+      'canceled' => array('canceled'),
+      'resent' => array('resent'),
+    ),
+  );
+
+  $schema['invite2_type'] = array(
+    'description' => 'Stores information about defined invite2 types.',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique invite2 type identifier.',
+      ),
+      'type' => array(
+        'description' => 'The machine-readable name of this invite2 type.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'label' => array(
+        'description' => 'The human-readable name of this invite2 type.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'weight' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+        'description' => 'The weight of this invite2 type in relation to others.',
+      ),
+      'data' => array(
+        'type' => 'text',
+        'not null' => FALSE,
+        'size' => 'big',
+        'serialize' => TRUE,
+        'description' => 'A serialized array of additional data related to this invite2 type.',
+      ),
+    ) + entity_exportable_schema_fields(),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      'type' => array('type'),
+    ),
+  );
+
+  return $schema;
+}

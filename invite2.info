@@ -1,0 +1,10 @@
+name = Invite2
+description = Allows your users to send and track invitations to join your site.
+core = 7.x
+package = Invite2
+dependencies[] = entity
+dependencies[] = views
+files[] = invite2.info.inc
+files[] = invite2.admin.inc
+files[] = invite2_type.info.inc
+files[] = invite2_type.admin.inc

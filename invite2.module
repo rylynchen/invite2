@@ -1,0 +1,624 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function invite2_menu() {
+  $items = array();
+  $items['admin/content/invite2'] = array(
+    'title' => 'Invite2s',
+    'description' => 'Manage invite2s.',
+    'page callback' => 'invite2_manage',
+    'access arguments' => array('administer invite2'),
+    'file' => 'invite2.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['invite2/add'] = array(
+    'title' => 'Add a invite2',
+    'description' => 'Add a new invite2',
+    'page callback'  => 'invite2_add_page',
+    'access callback'  => 'invite2_access',
+    'access arguments' => array('add'),
+    'file' => 'invite2.pages.inc',
+    'type' => MENU_NORMAL_ITEM,
+    'weight' => 20,
+  );
+  foreach (invite2_get_types() as $type) {
+    $items['invite2/add/' . $type->type] = array(
+      'title' => 'Add ' . $type->label,
+      'page callback' => 'invite2_add',
+      'page arguments' => array($type->type),
+      'access callback' => 'invite2_access',
+      'access arguments' => array('add', $type->type),
+      'file' => 'invite2.pages.inc',
+    );
+  }
+  $items['invite2/%invite2'] = array(
+    'title' => 'Invite2',
+    'weight' => -10,
+    'page callback' => 'invite2_page_view',
+    'page arguments' => array(1),
+    'access callback' => 'invite2_access',
+    'access arguments' => array('view', 1),
+    'file' => 'invite2.pages.inc',
+  );
+  $items['invite2/%invite2/view'] = array(
+    'title' => 'View',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['invite2/%invite2/edit'] = array(
+    'title' => 'Edit',
+    'page callback' => 'invite2_page_edit',
+    'page arguments' => array(1),
+    'access callback' => 'invite2_access',
+    'access arguments' => array('edit', 1),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 0,
+    'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+    'file' => 'invite2.pages.inc',
+  );
+  $items['invite2/%invite2/delete'] = array(
+    'title' => 'Delete',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('invite2_delete_confirm_form', 1),
+    'access callback' => 'invite2_access',
+    'access arguments' => array('delete', 1),
+    'weight' => 1,
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'file' => 'invite2.pages.inc',
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_entity_info().
+ */
+function invite2_entity_info() {
+  $entity['invite2'] = array(
+    'label' => t('Invite2'),
+    'plural label' => t('Invite2s'),
+    'description' => t('Invite2 entity.'),
+    'entity class' => 'Invite2',
+    'controller class' => 'Invite2Controller',
+    'base table' => 'invite2',
+    'fieldable' => TRUE,
+  	'view modes' => array(
+      'full' => array(
+      	'label' => t('Invite2'),
+      	'custom settings' => FALSE,
+      ),
+  	),
+    'entity keys' => array(
+      'id' => 'iid',
+      'bundle' => 'type',
+    ),
+    'bundles' => array(),
+    'bundle keys' => array(
+      'bundle' => 'type',
+    ),
+    'label callback' => 'entity_class_label',
+    'uri callback' => 'entity_class_uri',
+    'creation callback' => 'invite2_create',
+    'access callback' => 'invite2_access',
+    'module' => 'invite2',
+    'metadata controller class' => 'Invite2MetadataController',
+  );
+  $entity['invite2_type'] = array(
+    'label' => t('Invite2 Type'),
+    'plural label' => t('Invite2 Types'),
+    'entity class' => 'Invite2Type',
+    'controller class' => 'Invite2TypeController',
+    'base table' => 'invite2_type',
+    'fieldable' => FALSE,
+    'bundle of' => 'invite2',
+    'exportable' => TRUE,
+    'entity keys' => array(
+      'id' => 'id',
+      'name' => 'type',
+      'label' => 'label',
+    ),
+    'access callback' => 'invite2_type_access',
+    'module' => 'invite2',
+    'metadata controller class' => 'Invite2TypeMetadataController',
+    'admin ui' => array(
+      'path' => 'admin/structure/invite2_types',
+      'file' => 'invite2_type.admin.inc',
+      'controller class' => 'Invite2TypeUIController',
+    ),
+  );
+  return $entity;
+}
+
+/**
+ * Implements hook_entity_info_alter().
+ *
+ * We are adding the info about the invite2 types via a hook to avoid a recursion
+ * issue as loading the invite2 types requires the entity info as well.
+ *
+ * @todo This needs to be improved
+ */
+function invite2_entity_info_alter(&$entity_info) {
+  foreach (invite2_get_types() as $type => $info) {
+    $entity_info['invite2']['bundles'][$type] = array(
+      'label' => $info->label,
+      'admin' => array(
+        'path' => 'admin/structure/invite2_types/manage/%invite2_type',
+        'real path' => 'admin/structure/invite2_types/manage/' . $type,
+        'bundle argument' => 4,
+        'access arguments' => array('administer invite2 type'),
+      ),
+    );
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function invite2_permission() {
+  $permissions = array(
+    'administer invite2 type' => array(
+      'title' => t('Administer invite2 type'),
+      'description' => t('Create and delete fields for invite2 types, and set their permissions.'),
+    ),
+    'administer invite2' => array(
+      'title' => t('Administer invite2'),
+      'description' => t('Edit and delete all invite2s'),
+    ),  
+  );
+  //Generate permissions per invite2 
+  foreach (invite2_get_types() as $type) {
+    $type_name = check_plain($type->type);
+    $permissions += array(
+      "$type_name:add" => array(
+        'title' => t('%type_name: Add', array('%type_name' => $type->label)),
+      ),
+      "$type_name:view own" => array(
+        'title' => t('%type_name: View own', array('%type_name' => $type->label)),
+      ),
+      "$type_name:view any" => array(
+        'title' => t('%type_name: View any', array('%type_name' => $type->label)),
+      ),
+      "$type_name:edit own" => array(
+        'title' => t('%type_name: Edit own', array('%type_name' => $type->label)),
+      ),
+      "$type_name:edit any" => array(
+        'title' => t('%type_name: Edit any', array('%type_name' => $type->label)),
+      ),
+      "$type_name:delete own" => array(
+        'title' => t('%type_name: Delete own', array('%type_name' => $type->label)),
+      ),
+      "$type_name:delete any" => array(
+        'title' => t('%type_name: Delete any', array('%type_name' => $type->label)),
+      ),
+    );
+  }
+  return $permissions;  
+}
+
+/**
+ * Implements hook_admin_paths().
+ */
+function invite2_admin_paths() {
+  if (variable_get('node_admin_theme')) {
+    $paths = array(
+      'invite2/add' => TRUE,
+      'invite2/*' => TRUE,
+      'invite2/*/edit' => TRUE,
+      'invite2/*/delete' => TRUE,
+    );
+    return $paths;
+  }
+}
+
+/**
+ * Determines whether the given user has access to a invite2.
+ *
+ * @param $op
+ *   The operation being performed. One of 'view', 'update', 'create', 'delete'
+ *   or just 'edit' (being the same as 'create' or 'update').
+ * @param $invite2
+ *   Optionally a invite2 or a invite2 type to check access for. If nothing is
+ *   given, access for all invite2s is determined.
+ * @param $account
+ *   The user to check for. Leave it to NULL to check for the global user.
+ * @return boolean
+ *   Whether access is allowed or not.
+ */
+function invite2_access($op, $invite2 = NULL, $account = NULL) {
+  if (user_access('administer invite2', $account)) {
+    return TRUE;
+  }
+  $access = FALSE;
+  if (isset($invite2)) {
+    global $user;
+    $account = isset($account) ? $account : $user;
+    switch ($op) {
+      case 'add':
+        $access = user_access($invite2.':add', $account);
+        break;
+      case 'view':
+        $access = user_access($invite2->type.':view any', $account) || ($invite2->uid == $account->uid && user_access($invite2->type.':view own', $account));
+        break;
+      case 'edit':
+        $access = user_access($invite2->type.':edit any', $account) || ($invite2->uid == $account->uid && user_access($invite2->type.':edit own', $account));
+        break;
+      case 'delete':
+        $access = user_access($invite2->type.':delete any', $account) || ($invite2->uid == $account->uid && user_access($invite2->type.':delete own', $account));
+        break;
+    }
+  }
+  return $access;
+}
+
+/**
+ * Access callback for the entity API.
+ */
+function invite2_type_access($op, $type = NULL, $account = NULL) {
+  return user_access('administer invite2 type', $account);
+}
+
+/**
+ * Gets an array of all invite2 types, keyed by the type name.
+ *
+ * @param $type_name
+ *   If set, the type with the given name is returned.
+ * @return Invite2Type[]
+ *   Depending whether $type isset, an array of invite2 types or a single one.
+ */
+function invite2_get_types($type_name = NULL) {
+  $types = entity_load_multiple_by_name('invite2_type', isset($type_name) ? array($type_name) : FALSE);
+  return isset($type_name) ? reset($types) : $types;
+}
+
+/**
+ * Menu argument loader; Load a invite2 type by string.
+ *
+ * @param $type
+ *   The machine-readable name of a invite2 type to load.
+ * @return
+ *   A invite2 type array or FALSE if $type does not exist.
+ */
+function invite2_type_load($type) {
+  return invite2_get_types($type);
+}
+
+/**
+ * Fetch a invite2 object. Make sure that the wildcard you choose 
+ * in the invite2 entity definition fits the function name here.
+ *
+ * @param $iid
+ *   Integer specifying the invite2 id.
+ * @param $reset
+ *   A boolean indicating that the internal cache should be reset.
+ * @return
+ *   A fully-loaded $invite2 object or FALSE if it cannot be loaded.
+ *
+ * @see invite2_load_multiple()
+ */
+function invite2_load($iid, $reset = FALSE) {
+  $invite2 = invite2_load_multiple(array($iid), array(), $reset);
+  return reset($invite2);
+}
+
+/**
+ * Load multiple invite2s based on certain conditions.
+ *
+ * @param $iids
+ *   An array of invite2 IDs.
+ * @param $conditions
+ *   An array of conditions to match against the {invite2} table.
+ * @param $reset
+ *   A boolean indicating that the internal cache should be reset.
+ * @return
+ *   An array of invite2 objects, indexed by iid.
+ *
+ * @see entity_load()
+ * @see invite2_load()
+ */
+function invite2_load_multiple($iids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('invite2', $iids, $conditions, $reset);
+}
+
+/**
+ * Deletes a invite2.
+ */
+function invite2_delete(Invite2 $invite2) {
+  $invite2->delete();
+}
+
+/**
+ * Delete multiple invite2s.
+ *
+ * @param $iids
+ *   An array of invite2 IDs.
+ */
+function invite2_delete_multiple(array $iids) {
+  entity_get_controller('invite2')->delete($iids);
+}
+
+/**
+ * Create a invite2 object.
+ */
+function invite2_create($values = array()) {
+  return entity_get_controller('invite2')->create($values);
+}
+
+/**
+ * Saves a invite2 to the database.
+ *
+ * @param $invite2
+ *   The invite2 object.
+ */
+function invite2_save(Invite2 $invite2) {
+  return $invite2->save();
+}
+
+/**
+ * Saves a invite2 type to the db.
+ */
+function invite2_type_save(Invite2Type $type) {
+  $type->save();
+}
+
+/**
+ * Deletes a invite2 type from the db.
+ */
+function invite2_type_delete(Invite2Type $type) {
+  $type->delete();
+}
+
+/**
+ * URI callback for invite2
+ */
+function invite2_uri(Invite2 $invite2){
+  return array(
+    'path' => 'invite2/' . $invite2->iid,
+  );
+}
+
+/**
+ * Menu title callback for showing individual entities
+ */
+function invite2_page_title(Invite2 $invite2){
+  return $invite2->name;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function invite2_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'invite2') . '/views',
+  );
+}
+
+/**
+ * Implement hook_theme().
+ */
+function invite2_theme() {
+  return array(
+    'invite2_add_list' => array(
+      'variables' => array('content' => array()),
+      'file' => 'invite2.pages.inc',
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu_local_tasks_alter().
+ */
+function invite2_menu_local_tasks_alter(&$data, $router_item, $root_path) {
+  if ($root_path == 'admin/content/invite2') {
+    $item = menu_get_item('invite2/add');
+    if ($item['access']) {
+      $data['actions']['output'][] = array(
+        '#theme' => 'menu_local_action',
+        '#link' => $item,
+      );
+    }
+  }
+}
+
+/**
+ * The class used for invite2 entities
+ */
+class Invite2 extends Entity {
+  
+  public function __construct($values = array()) {
+    parent::__construct($values, 'invite2');
+  }
+
+  protected function defaultLabel() {
+    return $this->email;
+  }
+
+  protected function defaultUri() {
+    return array('path' => 'invite2/' . $this->iid);
+  }
+}
+
+/**
+ * The class used for invite2 type entities
+ */
+class Invite2Type extends Entity {
+  
+  public $type;
+  public $label;
+  
+  public function __construct($values = array()) {
+    parent::__construct($values, 'invite2_type');
+  }
+  
+}
+
+/**
+ * The Controller for invite2 entities
+ */
+class Invite2Controller extends EntityAPIController {
+  public function __construct($entityType) {
+    parent::__construct($entityType);
+  }
+
+
+  /**
+   * Create a invite2 - we first set up the values that are specific
+   * to our invite2 schema but then also go through the EntityAPIController
+   * function.
+   * 
+   * @param $type
+   *   The machine-readable type of the invite2.
+   *
+   * @return
+   *   A invite2 object with all default fields initialized.
+   */
+  public function create(array $values = array()) {
+    // Add values that are specific to our invite2
+    $values += array(
+      'iid' => NULL,
+      'uid' => $GLOBALS['user']->uid,
+      'email' => NULL,
+      'code' => NULL,
+      'invitee' => NULL,
+      'created' => time(),
+      'expiry' => variable_get('invite2_expiry', 0),
+      'joined' => 0,
+      'canceled' => 0,
+      'resent' => 0,
+      'data' => '',
+    );
+    
+    $invite2 = parent::create($values);
+    return $invite2;
+  }
+  
+  /**
+   * Overriding the buldContent function to add entity specific fields
+   */
+  public function buildContent($entity, $view_mode = 'full', $langcode = NULL, $content = array()) {
+    $content = parent::buildContent($entity, $view_mode, $langcode, $content);
+    $content['email'] =  array(
+      '#markup' => '<div><label>Email:</label>'.$entity->email.'</div>',
+      '#weight' => -10,
+    );
+    return $content;
+  }
+  
+}
+
+/**
+ * The Controller for invite2 entities
+ */
+class Invite2TypeController extends EntityAPIControllerExportable {
+  public function __construct($entityType) {
+    parent::__construct($entityType);
+  }
+  
+   /**
+   * Create a invite2 type - we first set up the values that are specific
+   * to our invite2 type schema but then also go through the EntityAPIController
+   * function.
+   * 
+   * @param $type
+   *   The machine-readable type of the invite2.
+   *
+   * @return
+   *   A invite2 type object with all default fields initialized.
+   */
+  public function create(array $values = array()) {
+    // Add values that are specific to our invite2
+    $values += array( 
+      'id' => '',
+    );
+    $invite2_type = parent::create($values);
+    return $invite2_type;
+  }
+
+}
+
+/**
+ * Generates a unique tracking code.
+ *
+ * @return
+ *   An 8-digit unique tracking code.
+ */
+function invite2_generate_code() {
+  do {
+    $code = user_password(8);
+    $result = (bool) db_select('invite2', 'i')->condition('code', $code)->fields('i', array('iid'))->execute()->fetchField();
+  } while ($result);
+  return $code;
+}
+
+/**
+ * The invite2 edit form.
+ */
+function invite2_form($form, &$form_state, $invite2) {
+  // Save the invite2 for later, incase we need it.
+  $form['#invite2'] = $invite2;
+  $form_state['invite2'] = $invite2;
+  $form['email'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Email'),
+    '#default_value' => isset($invite2->email) ? $invite2->email : '',
+    '#maxlength' => 255,
+    '#required' => TRUE,
+    '#weight' => -5,
+  );
+  // Add the field related form elements.
+  field_attach_form('invite2', $invite2, $form, $form_state);
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#weight' => 40
+  );
+  if (!empty($invite2->iid)) {
+    $form['actions']['delete'] = array(
+      '#type' => 'submit',
+      '#value' => t('Delete'),
+      '#weight' => 45,
+      '#limit_validation_errors' => array(),
+      '#submit' => array('invite2_form_submit_delete'),
+    );    
+  }
+  $form['#validate'][] = 'invite2_form_validate';
+  $form['#submit'][] = 'invite2_form_submit';
+  return $form;
+}
+
+/**
+ * Bmap form validate handler.
+ */
+function invite2_form_validate($form, &$form_state) {
+  $invite2 = $form_state['invite2'];
+  $email = trim($form_state['values']['email']);
+  // Notify field widgets to validate their data.
+  if (!preg_match("/^[_.0-9a-z-]+@([0-9a-z][0-9a-z-]+.)+[a-z]{2,3}$/", $email)) {
+    form_set_error('email', t("Invalid email address !"));
+  }
+  else if (user_load_by_mail($email)) {
+    form_set_error('email', t("Email have register !"));
+  }
+  else {
+    form_set_value($form['email'], $email, $form_state);
+  }
+  field_attach_form_validate('invite2', $invite2, $form, $form_state);
+}
+
+/**
+ * Bmap form submit handler.
+ */
+function invite2_form_submit($form, &$form_state) {
+  $invite2 = &$form_state['invite2'];
+  $invite2->email = $form_state['values']['email'];
+  $invite2->code = invite2_generate_code();
+  // Notify field widgets.
+  field_attach_submit('invite2', $invite2, $form, $form_state);
+  // Save the bmap
+  invite2_save($invite2);
+  drupal_set_message(t('Invite2 saved.'));
+  $form_state['redirect'] = 'invite2/'.$invite2->iid;
+}
